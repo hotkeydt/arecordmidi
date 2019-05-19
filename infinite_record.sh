@@ -3,12 +3,16 @@
 while true
 do
 	tmpfile=$(tempfile --suffix=.mid)
-	./arecordmidi -p 24 -T 10000 $tmpfile
+	echo Starting arecordmidi
+	./arecordmidi -p 20 -T 5000 $tmpfile
 
 	if [ -f $tmpfile ]
 	then
-		outfile=$(date +arecordmidi-%Y-%m-%d-%H:%M:%S.mid)
-		mv $tmpfile ~/midi/$outfile
+		outdir=$(date +%Y/%m)
+		outfile=$(date +arecordmidi_%Y%m%d_%H%M%S.mid)
+		mkdir -p ~/midi/$outdir
+		mv $tmpfile ~/midi/$outdir/$outfile
+		echo Saved To ~/midi/$outdir/$outfile
 	else
 		rm $tmpfile
 		sleep 5
