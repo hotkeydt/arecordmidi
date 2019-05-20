@@ -87,6 +87,9 @@ static int ts_div = 4; /* time signature: denominator */
 static int ts_dd = 2; /* time signature: denominator as a power of two */
 static snd_seq_tick_time_t t_start = 0;
 
+static int noteCount = 0;
+static time_t startTime = 0;
+static time_t endTime = 0;
 
 /* prints an error message to stderr, and dies */
 static void fatal(const char *msg, ...)
@@ -445,9 +448,12 @@ static void record_event(const snd_seq_event_t *ev)
 	if (ev->queue != queue || !snd_seq_ev_is_tick(ev))
 		return;
 
-	if (t_start==0)
+	if (t_start==0) {
 		t_start = ev->time.tick;
-
+		startTime = time(NULL);
+	}
+	endTime = time(NULL);
+	
 	/* determine which track to record to */
 	i = ev->dest.port;
 	if (i == port_count) {
@@ -470,6 +476,7 @@ static void record_event(const snd_seq_event_t *ev)
 		command(track, MIDI_CMD_NOTE_ON | (ev->data.note.channel & 0xf));
 		add_byte(track, ev->data.note.note & 0x7f);
 		add_byte(track, ev->data.note.velocity & 0x7f);
+		++noteCount;
 		break;
 	case SND_SEQ_EVENT_NOTEOFF:
 		delta_time(track, ev);
@@ -896,5 +903,7 @@ int main(int argc, char *argv[])
 
 	fclose(file);
 	snd_seq_close(seq);
+
+	fprintf(stdout, "notes=%d,seconds=%d\n", noteCount, startTime ? endTime-startTime : 0);
 	return 0;
 }
