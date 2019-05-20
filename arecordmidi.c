@@ -70,6 +70,7 @@ static int beats = 120;
 static int frames;
 static int ticks = 0;
 static int timeout = 0;
+static int timeoutTicks = 0;
 static FILE *file;
 static int channel_split;
 static int num_tracks;
@@ -86,10 +87,10 @@ static int ts_num = 4; /* time signature: numerator */
 static int ts_div = 4; /* time signature: denominator */
 static int ts_dd = 2; /* time signature: denominator as a power of two */
 static snd_seq_tick_time_t t_start = 0;
+static snd_seq_tick_time_t t_end = 0;
+static snd_seq_tick_time_t t_currTick = 0;
 
 static int noteCount = 0;
-static time_t startTime = 0;
-static time_t endTime = 0;
 
 /* prints an error message to stderr, and dies */
 static void fatal(const char *msg, ...)
@@ -439,27 +440,26 @@ static void record_port_numbers(void)
 	}
 }
 
-static void record_event(const snd_seq_event_t *ev)
+static int record_event(const snd_seq_event_t *ev)
 {
 	unsigned int i;
 	struct smf_track *track;
 
 	/* ignore events without proper timestamps */
 	if (ev->queue != queue || !snd_seq_ev_is_tick(ev))
-		return;
+		return 0;
 
 	if (t_start==0) {
 		t_start = ev->time.tick;
-		startTime = time(NULL);
 	}
-	endTime = time(NULL);
+	t_currTick = ev->time.tick;
 	
 	/* determine which track to record to */
 	i = ev->dest.port;
 	if (i == port_count) {
 		if (ev->type == SND_SEQ_EVENT_USR0)
 			metronome_pattern(ev->time.tick);
-		return;
+		return 0;
 	}
 	if (channel_split) {
 		i *= TRACKS_PER_PORT;
@@ -467,7 +467,7 @@ static void record_event(const snd_seq_event_t *ev)
 			i += 1 + (ev->data.note.channel & 0xf);
 	}
 	if (i >= num_tracks)
-		return;
+		return 0;
 	track = &tracks[i];
 
 	switch (ev->type) {
@@ -476,13 +476,16 @@ static void record_event(const snd_seq_event_t *ev)
 		command(track, MIDI_CMD_NOTE_ON | (ev->data.note.channel & 0xf));
 		add_byte(track, ev->data.note.note & 0x7f);
 		add_byte(track, ev->data.note.velocity & 0x7f);
-		++noteCount;
+		if (ev->data.note.velocity) {
+			++noteCount;
+		}
 		break;
 	case SND_SEQ_EVENT_NOTEOFF:
 		delta_time(track, ev);
 		command(track, MIDI_CMD_NOTE_OFF | (ev->data.note.channel & 0xf));
 		add_byte(track, ev->data.note.note & 0x7f);
 		add_byte(track, ev->data.note.velocity & 0x7f);
+		fprintf(stderr, "NOTEOFF %d %d %d\n", ev->data.note.channel, ev->data.note.note, ev->data.note.velocity);
 		break;
 	case SND_SEQ_EVENT_KEYPRESS:
 		delta_time(track, ev);
@@ -565,7 +568,7 @@ static void record_event(const snd_seq_event_t *ev)
 	case SND_SEQ_EVENT_TUNE_REQUEST:
 	case SND_SEQ_EVENT_RESET:
 	case SND_SEQ_EVENT_SENSING:
-		break;
+		return 0;
 #endif
 	case SND_SEQ_EVENT_SYSEX:
 		if (ev->data.ext.len == 0)
@@ -580,9 +583,11 @@ static void record_event(const snd_seq_event_t *ev)
 			add_byte(track, ((unsigned char*)ev->data.ext.ptr)[i]);
 		break;
 	default:
-		return;
+		return 0;
 	}
 	track->used = 1;
+	t_end = ev->time.tick;	
+	return t_end;
 }
 
 static void finish_tracks(void)
@@ -820,6 +825,9 @@ int main(int argc, char *argv[])
 		fputs("Please specify a file to record to.\n", stderr);
 		return 1;
 	}
+	if (timeout) {
+		timeoutTicks = timeout * ticks * beats / (1000 * 60);
+	}
 	filename = argv[optind];
 
 	init_tracks();
@@ -879,8 +887,9 @@ int main(int argc, char *argv[])
 		snd_seq_poll_descriptors(seq, pfds, npfds, POLLIN);
 		err = poll(pfds, npfds, (timeout==0) ? -1 : timeout);
 		if (err == 0) { // timeout occured
-			if (no_events>0)
+			if (no_events>0) {
 				break;
+			}
 		} else if (err < 0) {
 			break;
 		}
@@ -890,12 +899,19 @@ int main(int argc, char *argv[])
 			if (err < 0)
 				break;
 			if (event) {
-				record_event(event);
-				no_events++;
+				if (record_event(event)) {
+					no_events++;
+				}				
+				if (no_events && timeoutTicks && ((t_currTick-t_end) > timeoutTicks)) {
+					stop = 1;
+					break;
+				}
+				if (no_events > 0) {}
 			}
 		} while (err > 0);
-		if (stop)
+		if (stop) {
 			break;
+		}
 	}
 
 	finish_tracks();
@@ -904,6 +920,11 @@ int main(int argc, char *argv[])
 	fclose(file);
 	snd_seq_close(seq);
 
-	fprintf(stdout, "notes=%d,seconds=%d\n", noteCount, startTime ? endTime-startTime : 0);
+	int seconds = 0;
+	if (t_start && t_end && (t_end > t_start)) {
+		seconds = (t_end-t_start)*60/(ticks * beats);
+	}
+
+	fprintf(stdout, "notes=%d,seconds=%d\n", noteCount, seconds);
 	return 0;
 }

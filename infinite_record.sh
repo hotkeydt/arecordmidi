@@ -4,7 +4,7 @@ basedir="/home/pi/midi"
 
 while true
 do
-	tmpfile=$(mktemp -u midirec_XXXXX.mid)
+	tmpfile=$(mktemp -u --tmpdir midirec_XXXXX.mid)
 	echo Starting arecordmidi
 	recordout="$(./arecordmidi -p 20 -T 5000 $tmpfile)"
 	info=""
