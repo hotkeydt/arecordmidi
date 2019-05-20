@@ -6,7 +6,7 @@ while true
 do
 	tmpfile=$(mktemp -u --tmpdir midirec_XXXXX.mid)
 	echo Starting arecordmidi
-	recordout="$(./arecordmidi -p 20 -T 5000 $tmpfile)"
+	recordout="$(./arecordmidi -p 20 -T 10000 $tmpfile)"
 	info=""
 	if [[ $recordout =~ $regex ]]; then
 	        notes=${BASH_REMATCH[1]}

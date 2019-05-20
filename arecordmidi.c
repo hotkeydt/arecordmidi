@@ -906,7 +906,6 @@ int main(int argc, char *argv[])
 					stop = 1;
 					break;
 				}
-				if (no_events > 0) {}
 			}
 		} while (err > 0);
 		if (stop) {
