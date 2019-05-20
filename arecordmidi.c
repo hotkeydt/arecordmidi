@@ -92,6 +92,19 @@ static snd_seq_tick_time_t t_currTick = 0;
 
 static int noteCount = 0;
 
+static void touch(const char* filename) {
+	int fd = open(filename, O_CREAT|O_WRONLY, 0644);
+	if (fd >= 0) close(fd);
+}
+
+static void startRecording() {
+	touch(".rec");
+}
+
+static void stopRecording() {
+	remove(".rec");
+}
+
 /* prints an error message to stderr, and dies */
 static void fatal(const char *msg, ...)
 {
@@ -407,6 +420,11 @@ static void var_value(struct smf_track *track, int v)
 /* record the delta time from the last event */
 static void delta_time(struct smf_track *track, const snd_seq_event_t *ev)
 {
+	if (t_start==0) {
+		t_start = ev->time.tick;
+		startRecording();
+	}
+
 	snd_seq_tick_time_t tick = ev->time.tick - t_start;
 	int diff = tick - track->last_tick;
 	if (diff < 0)
@@ -449,9 +467,6 @@ static int record_event(const snd_seq_event_t *ev)
 	if (ev->queue != queue || !snd_seq_ev_is_tick(ev))
 		return 0;
 
-	if (t_start==0) {
-		t_start = ev->time.tick;
-	}
 	t_currTick = ev->time.tick;
 	
 	/* determine which track to record to */
@@ -586,6 +601,7 @@ static int record_event(const snd_seq_event_t *ev)
 		return 0;
 	}
 	track->used = 1;
+
 	t_end = ev->time.tick;	
 	return t_end;
 }
@@ -918,6 +934,8 @@ int main(int argc, char *argv[])
 
 	fclose(file);
 	snd_seq_close(seq);
+
+	stopRecording();
 
 	int seconds = 0;
 	if (t_start && t_end && (t_end > t_start)) {
